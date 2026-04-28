@@ -16,6 +16,7 @@ const STATUS = {
   buffering:    { label: 'Buffering',            cls: 'buffering'    },
   reconnecting: { label: 'Reconnecting',         cls: 'reconnecting' },
   error:        { label: 'Error',                cls: 'error'        },
+  paused:       { label: 'Paused',               cls: 'paused'       },
 };
 
 // ── StreamViewer class ─────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ class StreamViewer {
 
     this._lastCurrentTime  = 0;
     this._lastAdvanceStamp = 0;
+    this._frozen           = false;
 
     this._bindVideoEvents();
     this._startHealthWait();
@@ -48,6 +50,7 @@ class StreamViewer {
   // ── Status display ───────────────────────────────────────────────────────────
 
   _setStatus(key, detail = '') {
+    if (this._frozen && key !== 'paused') return;
     const s = STATUS[key] || STATUS.error;
     this.statusDot.className   = `dot ${s.cls}`;
     this.statusLabel.textContent = detail ? `${s.label} — ${detail}` : s.label;
@@ -234,6 +237,22 @@ class StreamViewer {
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer);   this._reconnectTimer = null; }
     if (this._stallTimer)     { clearTimeout(this._stallTimer);       this._stallTimer     = null; }
     if (this._healthTimer)    { clearTimeout(this._healthTimer);      this._healthTimer    = null; }
+  }
+
+  freeze() {
+    this._frozen = true;
+    this._setStatus('paused');
+  }
+
+  unfreeze() {
+    this._frozen = false;
+    if (this.hls) {
+      const lsp = this.hls.liveSyncPosition;
+      if (lsp != null && isFinite(lsp)) this.video.currentTime = lsp;
+    } else if (this.video.seekable && this.video.seekable.length > 0) {
+      this.video.currentTime = this.video.seekable.end(this.video.seekable.length - 1);
+    }
+    this._setStatus('live');
   }
 
   destroy() {

@@ -56,9 +56,11 @@ async function init() {
   const grid = document.getElementById('quad-grid');
   const panes = Array.from(grid.querySelectorAll('.quad-pane'));
   const focusExit = document.getElementById('focus-exit');
+  const freezeBadge = document.getElementById('freeze-badge');
   const blockListEl = document.getElementById('block-list');
   const blockListMetaEl = document.getElementById('block-list-meta');
   let activeView = null;
+  let frozen = false;
 
   function setFocusedPane(nextView) {
     activeView = nextView;
@@ -76,7 +78,19 @@ async function init() {
   }
   focusExit.addEventListener('click', () => setFocusedPane(null));
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && activeView) setFocusedPane(null);
+    if (event.key === 'Escape' && activeView) {
+      setFocusedPane(null);
+    } else if (event.key === ' ') {
+      event.preventDefault();
+      frozen = !frozen;
+      if (frozen) {
+        sv.freeze();
+        freezeBadge.classList.remove('hidden');
+      } else {
+        sv.unfreeze();
+        freezeBadge.classList.add('hidden');
+      }
+    }
   });
 
   // ── Build ring processor (computes ellipse mask once) ────────────────────
@@ -91,6 +105,7 @@ async function init() {
 
   function tick(now) {
     requestAnimationFrame(tick);
+    if (frozen) return;
     if (now - lastT < PROCESS_INTERVAL_MS) return;
     if (video.readyState < 2) return;   // no frame yet
     lastT = now;
