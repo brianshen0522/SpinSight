@@ -1,0 +1,11 @@
+{
+  "cropRegion":   ${CROP_REGION},
+  "outerEllipse": ${OUTER_ELLIPSE},
+  "innerEllipse": ${INNER_ELLIPSE},
+  "colorRed":     ${COLOR_RED},
+  "colorGreen":   ${COLOR_GREEN},
+  "colorBlack":   ${COLOR_BLACK},
+  "minBlockSize": ${MIN_BLOCK_SIZE},
+  "maxBlockSize": ${MAX_BLOCK_SIZE},
+  "filterUpMode": ${FILTER_UP_MODE}
+}

@@ -1,0 +1,21 @@
+services:
+  rtmp:
+    image: alfg/nginx-rtmp
+    ports:
+      - "1935:1935"
+      - "8081:8080"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+    restart: unless-stopped
+
+  publisher:
+    image: jrottenberg/ffmpeg:6.1-alpine
+    depends_on:
+      - rtmp
+    volumes:
+      - ./output.mp4:/data/output.mp4:ro
+      - ./publisher.sh:/publisher.sh:ro
+    entrypoint:
+      - /bin/sh
+      - /publisher.sh
+    restart: unless-stopped

@@ -1,0 +1,45 @@
+services:
+
+  # ── RTMP → HLS transcoder ────────────────────────────────────────────────────
+  transcoder:
+    build:
+      context: .
+      dockerfile: Dockerfile.transcoder
+    # Inline substitution means `docker compose up -d` detects .env changes
+    # and recreates the container automatically — env_file alone does not.
+    environment:
+      STREAM_URL:      ${STREAM_URL}
+      RECONNECT_WAIT:  ${RECONNECT_WAIT:-3}
+    volumes:
+      - hls_data:/hls
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-f", "/hls/stream.m3u8"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # ── Web server: static frontend + config injection + HLS segments ─────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    # env_file passes all vars to web-entrypoint.sh for envsubst → config.json
+    env_file: .env
+    ports:
+      - "8080:80"
+    volumes:
+      - hls_data:/hls:ro
+    restart: unless-stopped
+    depends_on:
+      transcoder:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  hls_data:
