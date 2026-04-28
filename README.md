@@ -50,7 +50,7 @@ Copy the template and fill in your stream details:
 
 ### 3. Launch
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 Open `http://localhost:8080` in your browser.
 
