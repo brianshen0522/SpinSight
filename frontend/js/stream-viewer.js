@@ -6,6 +6,7 @@ const STALL_TIMEOUT_MS = 8_000;   // no currentTime advance → stall
 const HEALTH_POLL_MS   = 3_000;   // probe /stream-health while offline
 const BASE_BACKOFF_MS  = 1_500;
 const MAX_BACKOFF_MS   = 30_000;
+const LIVE_DRIFT_CATCHUP_S = 4.0; // only jump when playback has drifted materially behind live
 
 // ── Status definitions ─────────────────────────────────────────────────────────
 
@@ -104,12 +105,14 @@ class StreamViewer {
 
     this.hls = new Hls({
       // Low-latency tuning
-      liveSyncDurationCount:      3,
-      liveMaxLatencyDurationCount: 8,
-      maxBufferLength:             20,
-      maxMaxBufferLength:          40,
+      liveSyncDurationCount:      2,
+      liveMaxLatencyDurationCount: 5,
+      maxBufferLength:             10,
+      maxMaxBufferLength:          14,
+      backBufferLength:            8,
       enableWorker:                true,
       lowLatencyMode:              true,
+      maxLiveSyncPlaybackRate:     1.15,
       // Aggressive fragment retry
       fragLoadingMaxRetry:         6,
       fragLoadingRetryDelay:       500,
@@ -151,6 +154,7 @@ class StreamViewer {
 
       const now     = Date.now();
       const advance = this.video.currentTime - this._lastCurrentTime;
+      this._maybeCatchUpToLive();
 
       if (advance > 0.05) {
         this._lastCurrentTime  = this.video.currentTime;
@@ -167,6 +171,20 @@ class StreamViewer {
     };
 
     this._stallTimer = setTimeout(tick, 1_000);
+  }
+
+  _maybeCatchUpToLive() {
+    if (!this.hls || this._frozen) return;
+    const livePos = this.hls.liveSyncPosition;
+    if (livePos == null || !isFinite(livePos)) return;
+
+    const drift = livePos - this.video.currentTime;
+    if (drift <= LIVE_DRIFT_CATCHUP_S) return;
+
+    console.info(`[viewer] live drift ${drift.toFixed(2)}s — catching up`);
+    this.video.currentTime = Math.max(this.video.currentTime, livePos - 0.5);
+    this._lastCurrentTime = livePos;
+    this._lastAdvanceStamp = Date.now();
   }
 
   // ── Reconnect logic ──────────────────────────────────────────────────────────
@@ -242,6 +260,23 @@ class StreamViewer {
   freeze() {
     this._frozen = true;
     this._setStatus('paused');
+  }
+
+  refresh() {
+    this._frozen = false;
+    this.reconnectAttempt = 0;
+    this._clearAllTimers();
+    this._setStatus('connecting', 'manual refresh');
+
+    if (this.hls) {
+      this.hls.destroy();
+      this.hls = null;
+    }
+
+    this.video.pause();
+    this.video.removeAttribute('src');
+    this.video.load();
+    this._connect();
   }
 
   unfreeze() {

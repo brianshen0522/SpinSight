@@ -1,9 +1,11 @@
 'use strict';
 
 import { RingProcessor } from './processor.js';
+import { DatasetCollector } from './dataset.js';
 import { predict } from './predictor.js';
 
 const PROCESS_INTERVAL_MS = 100;   // ~10 fps for heavy pixel work
+const MOTION_SAMPLE_SIZE = 64;
 
 async function init() {
   // ── Load config injected by Docker from .env ──────────────────────────────
@@ -58,13 +60,27 @@ async function init() {
   const panes = Array.from(grid.querySelectorAll('.quad-pane'));
   const focusExit = document.getElementById('focus-exit');
   const freezeBadge = document.getElementById('freeze-badge');
+  const modeDebugBtn = document.getElementById('mode-debug');
+  const modeDatasetBtn = document.getElementById('mode-dataset');
+  const datasetPanel = document.getElementById('dataset-panel');
+  const viewerHint = document.getElementById('viewer-hint');
+  const streamRefreshBtn = document.getElementById('stream-refresh');
   const blockListEl = document.getElementById('block-list');
   const blockListMetaEl = document.getElementById('block-list-meta');
   const predictionContent = document.getElementById('prediction-content');
   const predictionMeta = document.getElementById('prediction-meta');
   let activeView = null;
   let frozen = false;
+  let mode = 'debug';
   let lastBlobs = { blobsR: [], blobsG: [], blobsB: [] };
+  let lastPredResult = null;
+  let motionMask = null;
+  let lastMotionSample = null;
+  const motionCanvas = Object.assign(document.createElement('canvas'), {
+    width: MOTION_SAMPLE_SIZE,
+    height: MOTION_SAMPLE_SIZE,
+  });
+  const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
 
   function setFocusedPane(nextView) {
     activeView = nextView;
@@ -81,18 +97,109 @@ async function init() {
     });
   }
   focusExit.addEventListener('click', () => setFocusedPane(null));
+
+  function setMode(nextMode) {
+    mode = nextMode;
+    grid.classList.toggle('is-dataset', mode === 'dataset');
+    datasetPanel.classList.toggle('hidden', mode !== 'dataset');
+    modeDebugBtn.classList.toggle('is-active', mode === 'debug');
+    modeDatasetBtn.classList.toggle('is-active', mode === 'dataset');
+  }
+
+  function setViewerHint(message) {
+    viewerHint.textContent = message;
+    viewerHint.classList.toggle('hidden', !message);
+  }
+
+  function syncViewerHint({ spinning, predResult }) {
+    if (mode === 'dataset') {
+      if (datasetCollector.isPaused()) {
+        setViewerHint(datasetCollector.getStatusMessage());
+        return;
+      }
+      if (datasetCollector.isRoundActive() && !spinning) {
+        setViewerHint('Wheel is not spinning');
+        return;
+      }
+      if (datasetCollector.isRoundActive() && !predResult) {
+        setViewerHint('Waiting for green block');
+        return;
+      }
+      setViewerHint(datasetCollector.getStatusMessage());
+      return;
+    }
+
+    setViewerHint(spinning ? '' : 'Wheel is not spinning');
+  }
+
+  function buildMotionMask(ringMask, cropSize) {
+    if (!ringMask || !cropSize?.width || !cropSize?.height) return null;
+    const out = new Uint8Array(MOTION_SAMPLE_SIZE * MOTION_SAMPLE_SIZE);
+    for (let y = 0; y < MOTION_SAMPLE_SIZE; y++) {
+      const sy = Math.min(cropSize.height - 1, Math.floor((y / MOTION_SAMPLE_SIZE) * cropSize.height));
+      for (let x = 0; x < MOTION_SAMPLE_SIZE; x++) {
+        const sx = Math.min(cropSize.width - 1, Math.floor((x / MOTION_SAMPLE_SIZE) * cropSize.width));
+        out[(y * MOTION_SAMPLE_SIZE) + x] = ringMask[(sy * cropSize.width) + sx] ? 1 : 0;
+      }
+    }
+    return out;
+  }
+
+  function computeRingMotionDiff(cropCanvas) {
+    motionCtx.drawImage(cropCanvas, 0, 0, MOTION_SAMPLE_SIZE, MOTION_SAMPLE_SIZE);
+    const curr = motionCtx.getImageData(0, 0, MOTION_SAMPLE_SIZE, MOTION_SAMPLE_SIZE).data;
+    if (!lastMotionSample) {
+      lastMotionSample = new Uint8ClampedArray(curr);
+      return Infinity;
+    }
+
+    let sum = 0;
+    let samples = 0;
+    for (let i = 0; i < curr.length; i += 4) {
+      if (motionMask && motionMask[i >> 2] !== 1) continue;
+      sum += Math.abs(curr[i] - lastMotionSample[i])
+        + Math.abs(curr[i + 1] - lastMotionSample[i + 1])
+        + Math.abs(curr[i + 2] - lastMotionSample[i + 2]);
+      samples++;
+    }
+    lastMotionSample = new Uint8ClampedArray(curr);
+    if (!samples) return Infinity;
+    return sum / (samples * 3);
+  }
+
+  modeDebugBtn.addEventListener('click', () => setMode('debug'));
+  modeDatasetBtn.addEventListener('click', () => setMode('dataset'));
+  streamRefreshBtn.addEventListener('click', () => {
+    frozen = false;
+    freezeBadge.classList.add('hidden');
+    sv.refresh();
+  });
+
+  function toggleFreeze() {
+    frozen = !frozen;
+    if (frozen) {
+      sv.freeze();
+      freezeBadge.classList.remove('hidden');
+    } else {
+      sv.unfreeze();
+      freezeBadge.classList.add('hidden');
+    }
+  }
+
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && activeView) {
       setFocusedPane(null);
     } else if (event.key === ' ') {
       event.preventDefault();
-      frozen = !frozen;
-      if (frozen) {
-        sv.freeze();
-        freezeBadge.classList.remove('hidden');
+      if (mode === 'dataset') {
+        datasetCollector.startRound();
       } else {
-        sv.unfreeze();
-        freezeBadge.classList.add('hidden');
+        toggleFreeze();
+      }
+    } else if (event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      if (mode === 'dataset') {
+        datasetCollector.togglePause();
       }
     }
   });
@@ -203,6 +310,17 @@ async function init() {
     blockListEl,
     blockListMetaEl,
   });
+  const datasetCollector = new DatasetCollector();
+  datasetCollector.mount(datasetPanel);
+  datasetCollector.setContext({
+    getCropCanvas: () => proc.getCropCanvas(),
+    exportDetectionCrop: (blob, classId) => proc.exportDetectionCrop(blob, classId),
+    flashEl: qOrig,
+    ringMask: proc.getRingMask(),
+    cropSize: proc.getCropSize(),
+  });
+  motionMask = buildMotionMask(proc.getRingMask(), proc.getCropSize());
+  setMode('debug');
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const video = document.getElementById('stream-video');
@@ -216,11 +334,22 @@ async function init() {
     lastT = now;
     try {
       // 1. Process current frame → current blobs
+      const cropCanvas = proc.captureCrop(video);
+      const motionDiff = computeRingMotionDiff(cropCanvas);
+      const isSpinning = motionDiff >= datasetCollector.getDiffThreshold();
+
+      if (!isSpinning) {
+        syncViewerHint({ spinning: false, predResult: null });
+        overlay.classList.add('hidden');
+        return;
+      }
+
       const blobs = proc.process(video, ctxs);
       if (blobs) lastBlobs = blobs;
 
       // 2. Predict from current frame's blobs (no lag)
       const predResult = predict(lastBlobs.blobsR, lastBlobs.blobsG, lastBlobs.blobsB);
+      lastPredResult = predResult;
 
       // Build predMap: blob → entry (for block list badge rendering)
       let predMap = null;
@@ -250,6 +379,11 @@ async function init() {
 
       // 5. Update prediction panel chips (rate-limited)
       updatePredictionPanel(predResult);
+
+      if (mode === 'dataset') {
+        datasetCollector.onFrame(lastPredResult, now);
+      }
+      syncViewerHint({ spinning: true, predResult: lastPredResult });
 
       overlay.classList.add('hidden');
     } catch (e) {

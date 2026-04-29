@@ -30,7 +30,7 @@ while true; do
       -an \
       -f hls \
       -hls_time 2 \
-      -hls_list_size 10 \
+      -hls_list_size 6 \
       -hls_flags delete_segments+append_list+independent_segments \
       -hls_segment_filename /hls/seg%05d.ts \
       -hls_allow_cache 0 \

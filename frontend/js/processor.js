@@ -391,11 +391,9 @@ export class RingProcessor {
   }
 
   // ctxs = [origCtx, redCtx, greenCtx, blackCtx]
-  process(video, ctxs) {
+  captureCrop(video) {
     const { cropRegion: [cx, cy, cw, ch],
-            colorRed: cr, colorGreen: cg, colorBlack: cb,
-            minBlockSize, maxBlockSize,
-            filterUpMode = false } = this.cfg;
+    } = this.cfg;
 
     // Sync offscreen canvas to video native resolution
     if (this._vc.width !== video.videoWidth || this._vc.height !== video.videoHeight) {
@@ -408,6 +406,17 @@ export class RingProcessor {
       this._cropCanvas.height = ch;
     }
     this._cropCtx.drawImage(this._vc, cx, cy, cw, ch, 0, 0, cw, ch);
+    return this._cropCanvas;
+  }
+
+  // ctxs = [origCtx, redCtx, greenCtx, blackCtx]
+  process(video, ctxs) {
+    const { cropRegion: [cx, cy, cw, ch],
+            colorRed: cr, colorGreen: cg, colorBlack: cb,
+            minBlockSize, maxBlockSize,
+            filterUpMode = false } = this.cfg;
+
+    this.captureCrop(video);
 
     // Extract crop — same as Python's apply_crop: frame[y:y+h, x:x+w]
     const src = this._vctx.getImageData(cx, cy, cw, ch).data;
@@ -498,6 +507,61 @@ export class RingProcessor {
       { key: 'Green', color: '#50ff50', blobs: blobsG },
       { key: 'Black', color: '#dcdcdc', blobs: blobsB },
     ], predMap);
+  }
+
+  getCropCanvas() {
+    return this._cropCanvas;
+  }
+
+  getRingMask() {
+    return this.ringMask;
+  }
+
+  getCropSize() {
+    return { width: this.cw, height: this.ch };
+  }
+
+  exportDetectionCrop(blob, classId) {
+    const { cropRect, labelBox, bottomIdx } = blob;
+    if (!cropRect || !labelBox || !labelBox.length) return null;
+
+    const { cx, cy, w, h, angle } = cropRect;
+    const isVerticalEdge = (bottomIdx === 1 || bottomIdx === 3);
+    const tw = Math.max(1, Math.round(isVerticalEdge ? h : w));
+    const th = Math.max(1, Math.round(isVerticalEdge ? w : h));
+    const canvas = document.createElement('canvas');
+    canvas.width = tw;
+    canvas.height = th;
+
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    const offsets = [180, 90, 0, -90];
+    const rotationDeg = offsets[bottomIdx] - angle;
+    ctx.rotate(rotationDeg * Math.PI / 180);
+    ctx.drawImage(this._cropCanvas, -cx, -cy);
+    ctx.restore();
+
+    const transformed = labelBox.map(pt =>
+      transformPointToCropCanvas(pt.x, pt.y, cropRect, bottomIdx, canvas.width, canvas.height)
+    );
+    const xs = transformed.map(pt => pt.x);
+    const ys = transformed.map(pt => pt.y);
+    const minX = Math.max(0, Math.min(...xs));
+    const maxX = Math.min(canvas.width, Math.max(...xs));
+    const minY = Math.max(0, Math.min(...ys));
+    const maxY = Math.min(canvas.height, Math.max(...ys));
+    if (maxX <= minX || maxY <= minY) return null;
+
+    const cxNorm = ((minX + maxX) / 2) / canvas.width;
+    const cyNorm = ((minY + maxY) / 2) / canvas.height;
+    const wNorm = (maxX - minX) / canvas.width;
+    const hNorm = (maxY - minY) / canvas.height;
+
+    return {
+      jpegB64: canvas.toDataURL('image/jpeg', 0.92).split(',')[1],
+      labelLine: `${classId} ${cxNorm.toFixed(6)} ${cyNorm.toFixed(6)} ${wNorm.toFixed(6)} ${hNorm.toFixed(6)}`,
+    };
   }
 
   // Top-left quadrant: full stream + translated crop / label overlays
@@ -650,7 +714,14 @@ export class RingProcessor {
     for (const group of groups) {
       for (const blob of group.blobs) items.push({ ...group, blob });
     }
-    items.sort((a, b) => a.blob.cy - b.blob.cy || a.blob.cx - b.blob.cx);
+    items.sort((a, b) => {
+      const angA = this._clockwiseAngleFromTop(a.blob);
+      const angB = this._clockwiseAngleFromTop(b.blob);
+      if (angA !== angB) return angA - angB;
+      const distA = Math.hypot(a.blob.cx - this.rcx, a.blob.cy - this.rcy);
+      const distB = Math.hypot(b.blob.cx - this.rcx, b.blob.cy - this.rcy);
+      return distA - distB;
+    });
 
     if (this.blockListMetaEl) {
       this.blockListMetaEl.textContent = `${items.length} item${items.length === 1 ? '' : 's'}`;
@@ -668,6 +739,12 @@ export class RingProcessor {
     const frag = document.createDocumentFragment();
     for (const item of items) frag.appendChild(this._buildBlockCard(item, predMap));
     this.blockListEl.appendChild(frag);
+  }
+
+  _clockwiseAngleFromTop(blob) {
+    const dx = blob.cx - this.rcx;
+    const dy = blob.cy - this.rcy;
+    return (Math.atan2(dx, -dy) + (Math.PI * 2)) % (Math.PI * 2);
   }
 
   _buildBlockCard(item, predMap = null) {
@@ -792,4 +869,16 @@ export class RingProcessor {
 
 function zipBlobGroups(groups, colors) {
   return groups.map((blobs, idx) => [blobs, colors[idx]]);
+}
+
+function transformPointToCropCanvas(px, py, cropRect, bottomIdx, canvasWidth, canvasHeight) {
+  const offsets = [180, 90, 0, -90];
+  const rotationDeg = offsets[bottomIdx] - cropRect.angle;
+  const th = rotationDeg * Math.PI / 180;
+  const dx = px - cropRect.cx;
+  const dy = py - cropRect.cy;
+  return {
+    x: (canvasWidth / 2) + (dx * Math.cos(th)) - (dy * Math.sin(th)),
+    y: (canvasHeight / 2) + (dx * Math.sin(th)) + (dy * Math.cos(th)),
+  };
 }

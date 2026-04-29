@@ -12,8 +12,15 @@
     <!-- ── Header ──────────────────────────────────────────────────────────── -->
     <header>
       <span class="title">Roulette Stream</span>
+      <div class="mode-switch" role="tablist" aria-label="View mode">
+        <button id="mode-debug" class="mode-btn is-active" type="button" data-mode="debug">Debug</button>
+        <button id="mode-dataset" class="mode-btn" type="button" data-mode="dataset">Dataset</button>
+      </div>
       <div class="status-bar">
         <div id="status-dot" class="dot waiting"></div>
+        <button id="stream-refresh" class="stream-refresh" type="button" aria-label="Refresh stream" title="Refresh stream">
+          ↻
+        </button>
         <span id="status-label">Waiting for stream</span>
         <span id="reconnect-attempt"></span>
         <span id="uptime"></span>
@@ -30,6 +37,7 @@
       <div class="quad-pane pane-orig" data-view="orig">
         <canvas id="q-orig"></canvas>
         <div class="quad-label">Original</div>
+        <div id="viewer-hint" class="viewer-hint hidden"></div>
       </div>
 
       <aside class="block-list-panel" id="block-list-panel">
@@ -62,6 +70,8 @@
         <div class="quad-label" id="label-black">Black</div>
       </div>
 
+      <section class="dataset-panel hidden" id="dataset-panel"></section>
+
       <button class="focus-exit" id="focus-exit" type="button" aria-label="Back to grid">
         Back to grid
       </button>
@@ -83,6 +93,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
