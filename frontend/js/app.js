@@ -559,7 +559,7 @@ async function init() {
 
   function tick(now) {
     requestAnimationFrame(tick);
-    const allowFrozenPreviewRefresh = frozen && (mode === 'settings' || forcePreviewFrames > 0);
+    const allowFrozenPreviewRefresh = frozen && forcePreviewFrames > 0;
     if (frozen && !allowFrozenPreviewRefresh) return;
     if (now - lastT < PROCESS_INTERVAL_MS) return;
     if (video.readyState < 2) return;   // no frame yet

@@ -260,6 +260,7 @@ class StreamViewer {
   freeze() {
     this._frozen = true;
     this._setStatus('paused');
+    this.video.pause();
   }
 
   refresh() {
@@ -287,6 +288,7 @@ class StreamViewer {
     } else if (this.video.seekable && this.video.seekable.length > 0) {
       this.video.currentTime = this.video.seekable.end(this.video.seekable.length - 1);
     }
+    this.video.play().catch(() => {});
     this._setStatus('live');
   }
 
