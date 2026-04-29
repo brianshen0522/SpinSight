@@ -67,6 +67,10 @@ async function init() {
   const datasetPanel = document.getElementById('dataset-panel');
   const settingsPanelEl = document.getElementById('settings-panel');
   const viewerHint = document.getElementById('viewer-hint');
+  const sampleSelection = document.getElementById('sample-selection');
+  const sampleMagnifier = document.getElementById('sample-magnifier');
+  const sampleMagnifierCanvas = document.getElementById('sample-magnifier-canvas');
+  const sampleMagnifierCtx = sampleMagnifierCanvas.getContext('2d', { willReadFrequently: false });
   const streamRefreshBtn = document.getElementById('stream-refresh');
   const blockListEl = document.getElementById('block-list');
   const blockListMetaEl = document.getElementById('block-list-meta');
@@ -80,6 +84,8 @@ async function init() {
   let motionMask = null;
   let lastMotionSample = null;
   let forcePreviewFrames = 0;
+  let sampleTarget = null;
+  let sampleDrag = null;
   const motionCanvas = Object.assign(document.createElement('canvas'), {
     width: MOTION_SAMPLE_SIZE,
     height: MOTION_SAMPLE_SIZE,
@@ -96,21 +102,214 @@ async function init() {
 
   for (const pane of panes) {
     pane.addEventListener('click', () => {
+      if (sampleDrag || hasActiveSampler()) return;
       const view = pane.dataset.view;
       setFocusedPane(activeView === view ? null : view);
     });
   }
   focusExit.addEventListener('click', () => setFocusedPane(null));
 
+  function getSampleTarget() {
+    return settingsPanel.getSampleTarget();
+  }
+
+  function hasActiveSampler() {
+    return mode === 'settings' && Boolean(getSampleTarget());
+  }
+
+  function updateSampleSelectionBox() {
+    if (!sampleDrag) return;
+    const left = Math.min(sampleDrag.startX, sampleDrag.currX);
+    const top = Math.min(sampleDrag.startY, sampleDrag.currY);
+    const width = Math.max(1, Math.abs(sampleDrag.currX - sampleDrag.startX));
+    const height = Math.max(1, Math.abs(sampleDrag.currY - sampleDrag.startY));
+    sampleSelection.style.left = `${left}px`;
+    sampleSelection.style.top = `${top}px`;
+    sampleSelection.style.width = `${width}px`;
+    sampleSelection.style.height = `${height}px`;
+    sampleSelection.classList.remove('hidden');
+    sampleDrag.pane.appendChild(sampleSelection);
+  }
+
+  function hideSampleSelectionBox() {
+    sampleSelection.classList.add('hidden');
+  }
+
+  function hideSampleMagnifier() {
+    sampleMagnifier.classList.add('hidden');
+  }
+
+  function sourceCanvasForView(view) {
+    if (view === 'orig') return document.getElementById('q-orig');
+    return document.getElementById(`q-${view}`);
+  }
+
+  function drawSampleMagnifier(pane, view, clientX, clientY) {
+    const srcCanvas = sourceCanvasForView(view);
+    if (!srcCanvas) return;
+    const bounds = pane.getBoundingClientRect();
+    const x = clientX - bounds.left;
+    const y = clientY - bounds.top;
+    const scaleX = srcCanvas.width / bounds.width;
+    const scaleY = srcCanvas.height / bounds.height;
+    const srcX = Math.round(x * scaleX);
+    const srcY = Math.round(y * scaleY);
+    const sampleSize = 20;
+    const sx = Math.max(0, Math.min(srcCanvas.width - sampleSize, srcX - Math.floor(sampleSize / 2)));
+    const sy = Math.max(0, Math.min(srcCanvas.height - sampleSize, srcY - Math.floor(sampleSize / 2)));
+
+    sampleMagnifierCtx.imageSmoothingEnabled = false;
+    sampleMagnifierCtx.clearRect(0, 0, sampleMagnifierCanvas.width, sampleMagnifierCanvas.height);
+    sampleMagnifierCtx.drawImage(
+      srcCanvas,
+      sx, sy, sampleSize, sampleSize,
+      0, 0, sampleMagnifierCanvas.width, sampleMagnifierCanvas.height
+    );
+    sampleMagnifierCtx.strokeStyle = 'rgba(255,255,255,.9)';
+    sampleMagnifierCtx.lineWidth = 1;
+    sampleMagnifierCtx.beginPath();
+    sampleMagnifierCtx.moveTo(sampleMagnifierCanvas.width / 2, 0);
+    sampleMagnifierCtx.lineTo(sampleMagnifierCanvas.width / 2, sampleMagnifierCanvas.height);
+    sampleMagnifierCtx.moveTo(0, sampleMagnifierCanvas.height / 2);
+    sampleMagnifierCtx.lineTo(sampleMagnifierCanvas.width, sampleMagnifierCanvas.height / 2);
+    sampleMagnifierCtx.stroke();
+
+    sampleMagnifier.style.left = `${Math.min(bounds.width - 170, Math.max(10, x + 18))}px`;
+    sampleMagnifier.style.top = `${Math.min(bounds.height - 170, Math.max(10, y + 18))}px`;
+    pane.appendChild(sampleMagnifier);
+    sampleMagnifier.classList.remove('hidden');
+  }
+
+  function mapClientRectToCanvasRect(canvas, rect) {
+    const bounds = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / bounds.width;
+    const scaleY = canvas.height / bounds.height;
+    const x0 = Math.max(0, Math.min(canvas.width, Math.round((rect.left - bounds.left) * scaleX)));
+    const y0 = Math.max(0, Math.min(canvas.height, Math.round((rect.top - bounds.top) * scaleY)));
+    const x1 = Math.max(0, Math.min(canvas.width, Math.round((rect.right - bounds.left) * scaleX)));
+    const y1 = Math.max(0, Math.min(canvas.height, Math.round((rect.bottom - bounds.top) * scaleY)));
+    return {
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      w: Math.max(1, Math.abs(x1 - x0)),
+      h: Math.max(1, Math.abs(y1 - y0)),
+    };
+  }
+
+  function sampleBoundsFromRect(view, rect) {
+    const cropCanvas = proc.getCropCanvas();
+    if (!cropCanvas) return null;
+    const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+    let cropRect;
+
+    if (view === 'orig') {
+      const origCanvas = document.getElementById('q-orig');
+      const fullRect = mapClientRectToCanvasRect(origCanvas, rect);
+      const [ox, oy, cwLocal, chLocal] = cfg.cropRegion;
+      const ix0 = Math.max(fullRect.x, ox);
+      const iy0 = Math.max(fullRect.y, oy);
+      const ix1 = Math.min(fullRect.x + fullRect.w, ox + cwLocal);
+      const iy1 = Math.min(fullRect.y + fullRect.h, oy + chLocal);
+      if (ix1 <= ix0 || iy1 <= iy0) return null;
+      cropRect = { x: ix0 - ox, y: iy0 - oy, w: ix1 - ix0, h: iy1 - iy0 };
+    } else {
+      const canvas = document.getElementById(`q-${view}`);
+      cropRect = mapClientRectToCanvasRect(canvas, rect);
+    }
+
+    const img = cropCtx.getImageData(cropRect.x, cropRect.y, cropRect.w, cropRect.h).data;
+    if (!img.length) return null;
+
+    let rMin = 255, rMax = 0;
+    let gMin = 255, gMax = 0;
+    let bMin = 255, bMax = 0;
+    for (let i = 0; i < img.length; i += 4) {
+      const r = img[i];
+      const g = img[i + 1];
+      const b = img[i + 2];
+      if (r < rMin) rMin = r;
+      if (r > rMax) rMax = r;
+      if (g < gMin) gMin = g;
+      if (g > gMax) gMax = g;
+      if (b < bMin) bMin = b;
+      if (b > bMax) bMax = b;
+    }
+    return { rMin, rMax, gMin, gMax, bMin, bMax };
+  }
+
+  function finishSampleDrag() {
+    if (!sampleDrag) return;
+    const bounds = sampleDrag.pane.getBoundingClientRect();
+    const rect = {
+      left: bounds.left + Math.min(sampleDrag.startX, sampleDrag.currX),
+      top: bounds.top + Math.min(sampleDrag.startY, sampleDrag.currY),
+      right: bounds.left + Math.max(sampleDrag.startX, sampleDrag.currX),
+      bottom: bounds.top + Math.max(sampleDrag.startY, sampleDrag.currY),
+    };
+    const sampleBounds = sampleBoundsFromRect(sampleDrag.view, rect);
+    if (sampleBounds) settingsPanel.applySampleBounds(sampleBounds);
+    sampleDrag = null;
+    hideSampleSelectionBox();
+  }
+
+  for (const pane of panes) {
+    pane.addEventListener('pointerdown', event => {
+      if (!hasActiveSampler()) return;
+      if (activeView) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const bounds = pane.getBoundingClientRect();
+      sampleDrag = {
+        pane,
+        view: pane.dataset.view,
+        startX: event.clientX - bounds.left,
+        startY: event.clientY - bounds.top,
+        currX: event.clientX - bounds.left,
+        currY: event.clientY - bounds.top,
+      };
+      updateSampleSelectionBox();
+    });
+    pane.addEventListener('pointermove', event => {
+      if (!hasActiveSampler() || !event.ctrlKey) {
+        if (!sampleDrag) hideSampleMagnifier();
+        return;
+      }
+      drawSampleMagnifier(pane, pane.dataset.view, event.clientX, event.clientY);
+    });
+    pane.addEventListener('pointerleave', () => {
+      if (!sampleDrag) hideSampleMagnifier();
+    });
+  }
+
+  window.addEventListener('pointermove', event => {
+    if (!sampleDrag) return;
+    const bounds = sampleDrag.pane.getBoundingClientRect();
+    sampleDrag.currX = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
+    sampleDrag.currY = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
+    updateSampleSelectionBox();
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!sampleDrag) return;
+    finishSampleDrag();
+    hideSampleMagnifier();
+  });
+
   function setMode(nextMode) {
     mode = nextMode;
     grid.classList.toggle('is-dataset', mode === 'dataset');
     grid.classList.toggle('is-settings', mode === 'settings');
+    grid.classList.toggle('is-sampling', mode === 'settings' && Boolean(sampleTarget));
     datasetPanel.classList.toggle('hidden', mode !== 'dataset');
     settingsPanelEl.classList.toggle('hidden', mode !== 'settings');
     modeDebugBtn.classList.toggle('is-active', mode === 'debug');
     modeSettingsBtn.classList.toggle('is-active', mode === 'settings');
     modeDatasetBtn.classList.toggle('is-active', mode === 'dataset');
+    grid.classList.toggle('sample-red', sampleTarget === 'red');
+    grid.classList.toggle('sample-green', sampleTarget === 'green');
+    grid.classList.toggle('sample-black', sampleTarget === 'black');
+    grid.classList.toggle('sampling-cursor', mode === 'settings' && Boolean(sampleTarget));
+    if (!(mode === 'settings' && Boolean(sampleTarget))) hideSampleMagnifier();
   }
 
   function setViewerHint(message) {
@@ -344,6 +543,10 @@ async function init() {
     onChange: () => {
       syncRangeTitles();
       forcePreviewFrames = 2;
+    },
+    onSamplingChange: (target) => {
+      sampleTarget = target;
+      setMode(mode);
     },
   });
   settingsPanel.mount(settingsPanelEl);

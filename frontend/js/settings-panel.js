@@ -10,7 +10,7 @@ function intOr(fallback, value) {
 }
 
 export class SettingsPanel {
-  constructor(cfg, { onChange } = {}) {
+  constructor(cfg, { onChange, onSamplingChange } = {}) {
     this.cfg = cfg;
     this._defaults = {
       filterUpMode: Boolean(cfg.filterUpMode),
@@ -21,7 +21,19 @@ export class SettingsPanel {
       colorBlack: cfg.colorBlack.slice(),
     };
     this._onChange = onChange || (() => {});
+    this._onSamplingChange = onSamplingChange || (() => {});
     this._el = {};
+    this._sampleTarget = null;
+    this._sampleHasData = {
+      red: false,
+      green: false,
+      black: false,
+    };
+    this._sampleHistory = {
+      red: [],
+      green: [],
+      black: [],
+    };
   }
 
   mount(panelEl) {
@@ -49,10 +61,17 @@ export class SettingsPanel {
         value: q(`st-black-${id}-value`),
         track: q(`st-black-${id}-track`),
       })),
+      sampleRed: q('st-sample-red'),
+      sampleGreen: q('st-sample-green'),
+      sampleBlack: q('st-sample-black'),
+      sampleReset: q('st-sample-reset'),
+      sampleUndo: q('st-sample-undo'),
+      sampleStatus: q('st-sample-status'),
       resetBtn: q('st-reset'),
     };
 
     this._syncFromCfg();
+    this._syncSamplingUI();
     this._bindEvents();
   }
 
@@ -108,8 +127,33 @@ export class SettingsPanel {
       this.cfg.colorRed = this._defaults.colorRed.slice();
       this.cfg.colorGreen = this._defaults.colorGreen.slice();
       this.cfg.colorBlack = this._defaults.colorBlack.slice();
+      this._sampleHasData.red = false;
+      this._sampleHasData.green = false;
+      this._sampleHasData.black = false;
       this._syncFromCfg();
       this._emitChange();
+    });
+
+    this._el.sampleRed.addEventListener('click', () => this._toggleSampleTarget('red'));
+    this._el.sampleGreen.addEventListener('click', () => this._toggleSampleTarget('green'));
+    this._el.sampleBlack.addEventListener('click', () => this._toggleSampleTarget('black'));
+    this._el.sampleReset.addEventListener('click', () => {
+      if (!this._sampleTarget) return;
+      this._sampleHistory[this._sampleTarget] = [];
+      this._sampleHasData[this._sampleTarget] = false;
+      this._setColorValues(this._colorKeyForTarget(this._sampleTarget), [0, 0, 0, 0, 0, 0]);
+      this._emitChange();
+      this._syncSamplingUI();
+    });
+    this._el.sampleUndo.addEventListener('click', () => {
+      if (!this._sampleTarget) return;
+      const history = this._sampleHistory[this._sampleTarget];
+      if (!history.length) return;
+      const prev = history.pop();
+      this._sampleHasData[this._sampleTarget] = prev.hasData;
+      this._setColorValues(this._colorKeyForTarget(this._sampleTarget), prev.values);
+      this._emitChange();
+      this._syncSamplingUI();
     });
   }
 
@@ -127,6 +171,70 @@ export class SettingsPanel {
     this._syncColorGroup(this._el.green, this.cfg.colorGreen);
     this._syncColorGroup(this._el.black, this.cfg.colorBlack);
     this._onChange(this.cfg);
+  }
+
+  _toggleSampleTarget(target) {
+    this._sampleTarget = this._sampleTarget === target ? null : target;
+    this._syncSamplingUI();
+  }
+
+  _syncSamplingUI() {
+    const buttons = {
+      red: this._el.sampleRed,
+      green: this._el.sampleGreen,
+      black: this._el.sampleBlack,
+    };
+    for (const [name, btn] of Object.entries(buttons)) {
+      btn.classList.toggle('is-active', this._sampleTarget === name);
+    }
+    this._el.sampleReset.disabled = !this._sampleTarget;
+    this._el.sampleUndo.disabled = !this._sampleTarget || this._sampleHistory[this._sampleTarget].length === 0;
+    this._el.sampleStatus.textContent = this._sampleTarget
+      ? `Sampling ${this._sampleTarget}: drag on Original or RGB preview`
+      : 'Choose a color, then drag on the viewer to auto-build RGB ranges';
+    this._onSamplingChange(this._sampleTarget);
+  }
+
+  getSampleTarget() {
+    return this._sampleTarget;
+  }
+
+  applySampleBounds(bounds) {
+    if (!this._sampleTarget || !bounds) return;
+    const key = this._colorKeyForTarget(this._sampleTarget);
+    const curr = this.cfg[key].slice();
+    this._sampleHistory[this._sampleTarget].push({
+      values: curr.slice(),
+      hasData: this._sampleHasData[this._sampleTarget],
+    });
+    const next = this._sampleHasData[this._sampleTarget]
+      ? [
+          Math.min(curr[0], bounds.rMin),
+          Math.max(curr[1], bounds.rMax),
+          Math.min(curr[2], bounds.gMin),
+          Math.max(curr[3], bounds.gMax),
+          Math.min(curr[4], bounds.bMin),
+          Math.max(curr[5], bounds.bMax),
+        ]
+      : [
+          bounds.rMin, bounds.rMax,
+          bounds.gMin, bounds.gMax,
+          bounds.bMin, bounds.bMax,
+        ];
+    this._sampleHasData[this._sampleTarget] = true;
+    this._setColorValues(key, next);
+    this._emitChange();
+    this._syncSamplingUI();
+  }
+
+  _setColorValues(key, values) {
+    this.cfg[key] = values.map(v => clamp(v, 0, 255));
+  }
+
+  _colorKeyForTarget(target) {
+    if (target === 'red') return 'colorRed';
+    if (target === 'green') return 'colorGreen';
+    return 'colorBlack';
   }
 
   _syncColorGroup(group, values) {
@@ -175,6 +283,18 @@ export class SettingsPanel {
           <input id="st-filter-up" type="checkbox" />
           <span>Enable center-top filter</span>
         </label>
+
+        <div class="st-sample-box">
+          <div class="st-subtitle">Viewer Sampling</div>
+          <div class="st-sample-actions">
+            <button id="st-sample-red" class="settings-reset st-sample-btn" type="button">Sample Red</button>
+            <button id="st-sample-green" class="settings-reset st-sample-btn" type="button">Sample Green</button>
+            <button id="st-sample-black" class="settings-reset st-sample-btn" type="button">Sample Black</button>
+            <button id="st-sample-undo" class="settings-reset st-sample-btn" type="button">Undo Last Sample</button>
+            <button id="st-sample-reset" class="settings-reset st-sample-btn" type="button">Reset Target Range</button>
+          </div>
+          <div id="st-sample-status" class="st-sample-status"></div>
+        </div>
 
         <div class="st-size-grid">
           <label class="st-field">

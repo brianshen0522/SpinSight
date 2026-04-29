@@ -224,6 +224,43 @@ header {
   display: none;
 }
 
+.sample-selection {
+  position: absolute;
+  z-index: 4;
+  border: 2px solid rgba(59,130,246,.95);
+  background: rgba(59,130,246,.12);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+  pointer-events: none;
+}
+
+.sample-selection.hidden {
+  display: none;
+}
+
+.sample-magnifier {
+  position: absolute;
+  z-index: 5;
+  width: 160px;
+  height: 160px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid rgba(59,130,246,.95);
+  background: rgba(10,10,11,.92);
+  box-shadow: 0 18px 40px rgba(0,0,0,.42);
+  pointer-events: none;
+}
+
+.sample-magnifier.hidden {
+  display: none;
+}
+
+.sample-magnifier canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
 .quad-pane::after {
   content: 'Click to focus';
   position: absolute;
@@ -248,6 +285,10 @@ header {
 .quad-pane:hover {
   border-color: rgba(255,255,255,.12);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+}
+
+.quad-grid.sampling-cursor .quad-pane {
+  cursor: crosshair;
 }
 
 .block-list-panel {
@@ -279,6 +320,32 @@ header {
 }
 
 .quad-grid.is-settings .block-list-panel {
+  display: none;
+}
+
+.quad-grid.is-sampling .settings-panel {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.quad-grid.is-sampling .pane-orig {
+  grid-column: 1 / span 3;
+  grid-row: 1;
+}
+
+.quad-grid.is-sampling.sample-red .pane-red,
+.quad-grid.is-sampling.sample-green .pane-green,
+.quad-grid.is-sampling.sample-black .pane-black {
+  grid-column: 4 / span 3;
+  grid-row: 1;
+}
+
+.quad-grid.is-sampling.sample-red .pane-green,
+.quad-grid.is-sampling.sample-red .pane-black,
+.quad-grid.is-sampling.sample-green .pane-red,
+.quad-grid.is-sampling.sample-green .pane-black,
+.quad-grid.is-sampling.sample-black .pane-red,
+.quad-grid.is-sampling.sample-black .pane-green {
   display: none;
 }
 
@@ -599,6 +666,34 @@ header {
   border-radius: 10px;
   padding: 8px 10px;
   cursor: pointer;
+}
+
+.st-sample-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  background: rgba(255,255,255,.025);
+}
+
+.st-sample-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.st-sample-btn.is-active {
+  background: rgba(59,130,246,.18);
+  border-color: rgba(96,165,250,.35);
+  color: #dbeafe;
+}
+
+.st-sample-status {
+  font-size: 12px;
+  color: rgba(255,255,255,.78);
+  line-height: 1.45;
 }
 
 .st-toggle {
