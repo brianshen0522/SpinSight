@@ -2,6 +2,7 @@
 
 import { RingProcessor } from './processor.js';
 import { DatasetCollector } from './dataset.js';
+import { SettingsPanel } from './settings-panel.js';
 import { predict } from './predictor.js';
 
 const PROCESS_INTERVAL_MS = 100;   // ~10 fps for heavy pixel work
@@ -61,8 +62,10 @@ async function init() {
   const focusExit = document.getElementById('focus-exit');
   const freezeBadge = document.getElementById('freeze-badge');
   const modeDebugBtn = document.getElementById('mode-debug');
+  const modeSettingsBtn = document.getElementById('mode-settings');
   const modeDatasetBtn = document.getElementById('mode-dataset');
   const datasetPanel = document.getElementById('dataset-panel');
+  const settingsPanelEl = document.getElementById('settings-panel');
   const viewerHint = document.getElementById('viewer-hint');
   const streamRefreshBtn = document.getElementById('stream-refresh');
   const blockListEl = document.getElementById('block-list');
@@ -76,6 +79,7 @@ async function init() {
   let lastPredResult = null;
   let motionMask = null;
   let lastMotionSample = null;
+  let forcePreviewFrames = 0;
   const motionCanvas = Object.assign(document.createElement('canvas'), {
     width: MOTION_SAMPLE_SIZE,
     height: MOTION_SAMPLE_SIZE,
@@ -101,8 +105,11 @@ async function init() {
   function setMode(nextMode) {
     mode = nextMode;
     grid.classList.toggle('is-dataset', mode === 'dataset');
+    grid.classList.toggle('is-settings', mode === 'settings');
     datasetPanel.classList.toggle('hidden', mode !== 'dataset');
+    settingsPanelEl.classList.toggle('hidden', mode !== 'settings');
     modeDebugBtn.classList.toggle('is-active', mode === 'debug');
+    modeSettingsBtn.classList.toggle('is-active', mode === 'settings');
     modeDatasetBtn.classList.toggle('is-active', mode === 'dataset');
   }
 
@@ -168,6 +175,7 @@ async function init() {
   }
 
   modeDebugBtn.addEventListener('click', () => setMode('debug'));
+  modeSettingsBtn.addEventListener('click', () => setMode('settings'));
   modeDatasetBtn.addEventListener('click', () => setMode('dataset'));
   streamRefreshBtn.addEventListener('click', () => {
     frozen = false;
@@ -310,6 +318,19 @@ async function init() {
     blockListEl,
     blockListMetaEl,
   });
+  function syncRangeTitles() {
+    const rangeInfo = [
+      { id: 'label-red', range: cfg.colorRed },
+      { id: 'label-green', range: cfg.colorGreen },
+      { id: 'label-black', range: cfg.colorBlack },
+    ];
+    for (const { id, range } of rangeInfo) {
+      const el = document.getElementById(id);
+      if (el && range) {
+        el.title = `R[${range[0]}-${range[1]}] G[${range[2]}-${range[3]}] B[${range[4]}-${range[5]}]`;
+      }
+    }
+  }
   const datasetCollector = new DatasetCollector();
   datasetCollector.mount(datasetPanel);
   datasetCollector.setContext({
@@ -319,6 +340,13 @@ async function init() {
     ringMask: proc.getRingMask(),
     cropSize: proc.getCropSize(),
   });
+  const settingsPanel = new SettingsPanel(cfg, {
+    onChange: () => {
+      syncRangeTitles();
+      forcePreviewFrames = 2;
+    },
+  });
+  settingsPanel.mount(settingsPanelEl);
   motionMask = buildMotionMask(proc.getRingMask(), proc.getCropSize());
   setMode('debug');
 
@@ -328,7 +356,8 @@ async function init() {
 
   function tick(now) {
     requestAnimationFrame(tick);
-    if (frozen) return;
+    const allowFrozenPreviewRefresh = frozen && (mode === 'settings' || forcePreviewFrames > 0);
+    if (frozen && !allowFrozenPreviewRefresh) return;
     if (now - lastT < PROCESS_INTERVAL_MS) return;
     if (video.readyState < 2) return;   // no frame yet
     lastT = now;
@@ -337,8 +366,10 @@ async function init() {
       const cropCanvas = proc.captureCrop(video);
       const motionDiff = computeRingMotionDiff(cropCanvas);
       const isSpinning = motionDiff >= datasetCollector.getDiffThreshold();
+      const bypassMotionGate = mode === 'settings' || forcePreviewFrames > 0;
+      if (forcePreviewFrames > 0) forcePreviewFrames--;
 
-      if (!isSpinning) {
+      if (!isSpinning && !bypassMotionGate) {
         syncViewerHint({ spinning: false, predResult: null });
         overlay.classList.add('hidden');
         return;
@@ -383,7 +414,7 @@ async function init() {
       if (mode === 'dataset') {
         datasetCollector.onFrame(lastPredResult, now);
       }
-      syncViewerHint({ spinning: true, predResult: lastPredResult });
+      syncViewerHint({ spinning: isSpinning, predResult: lastPredResult });
 
       overlay.classList.add('hidden');
     } catch (e) {
@@ -397,17 +428,7 @@ async function init() {
   setInterval(() => { footerTime.textContent = new Date().toLocaleTimeString(); }, 1000);
 
   // ── Color range display in quad labels ────────────────────────────────────
-  const rangeInfo = [
-    { id: 'label-red',   range: cfg.colorRed   },
-    { id: 'label-green', range: cfg.colorGreen },
-    { id: 'label-black', range: cfg.colorBlack },
-  ];
-  for (const { id, range } of rangeInfo) {
-    const el = document.getElementById(id);
-    if (el && range) {
-      el.title = `R[${range[0]}-${range[1]}] G[${range[2]}-${range[3]}] B[${range[4]}-${range[5]}]`;
-    }
-  }
+  syncRangeTitles();
 }
 
 init().catch(console.error);

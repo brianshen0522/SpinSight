@@ -263,6 +263,25 @@ header {
   overflow: hidden;
 }
 
+.settings-panel {
+  grid-column: 5 / span 2;
+  grid-row: 1;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)),
+    #0b0b0d;
+  border: 1px solid rgba(255,255,255,.05);
+  overflow: auto;
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+.quad-grid.is-settings .block-list-panel {
+  display: none;
+}
+
 .block-list-header {
   display: flex;
   align-items: baseline;
@@ -366,6 +385,10 @@ header {
   display: none;
 }
 
+.quad-grid.is-focus .settings-panel {
+  display: none;
+}
+
 .quad-grid.is-focus .dataset-panel {
   display: none;
 }
@@ -464,6 +487,7 @@ header {
 
   .pane-orig { grid-column: 1 / -1; grid-row: 1; }
   .block-list-panel { grid-column: 1 / -1; grid-row: 2; }
+  .settings-panel { grid-column: 1 / -1; grid-row: 2; }
   .pane-red { grid-column: 1 / -1; grid-row: 3; }
   .pane-green { grid-column: 1 / -1; grid-row: 4; }
   .pane-black { grid-column: 1 / -1; grid-row: 5; }
@@ -540,6 +564,188 @@ header {
 .pred-chip--orphan          { background: #3a3a50; border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
 .pred-chip--orphan-resolved { border-style: solid; color: #fff; }
 .pred-chip--inferred        { opacity: 0.72; border: 1px dashed rgba(255,255,255,.4); }
+
+/* ── Settings panel ────────────────────────────────────────────────────────── */
+
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.78);
+}
+
+.settings-reset {
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.st-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,.88);
+}
+
+.st-size-grid,
+.st-range-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.st-color-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.st-subtitle {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.68);
+}
+
+.st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.st-field span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.st-field input {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  background: rgba(10,10,11,.88);
+  color: var(--text);
+  font: inherit;
+  padding: 9px 10px;
+}
+
+.st-slider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.st-slider-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.st-slider-top output {
+  min-width: 32px;
+  text-align: right;
+  font-family: monospace;
+  color: rgba(255,255,255,.9);
+}
+
+.st-range-shell {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.st-range-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255,255,255,.08) 0%,
+      rgba(255,255,255,.08) var(--range-start),
+      rgba(59,130,246,.7) var(--range-start),
+      rgba(59,130,246,.7) var(--range-end),
+      rgba(255,255,255,.08) var(--range-end),
+      rgba(255,255,255,.08) 100%
+    );
+  pointer-events: none;
+}
+
+.st-range-shell input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+
+.st-range-shell input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8e8ec;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 0 0 2px rgba(10,10,11,.6);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.st-range-shell input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8e8ec;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 0 0 2px rgba(10,10,11,.6);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.st-range-shell input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.st-range-shell input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
 
 /* ── Dataset panel ─────────────────────────────────────────────────────────── */
 

@@ -471,7 +471,7 @@ export class RingProcessor {
     const blobsB = findBlobs(binB, cw, ch, minBlockSize, maxBlockSize, rcx, rcy, filterUpMode);
 
     // ── Top-left quadrant: full frame + crop / label overlays ───────────────
-    this._processOrig(ctxs[0], [blobsR, blobsG, blobsB]);
+    this._processOrig(ctxs[0], [blobsR, blobsG, blobsB], filterUpMode);
 
     // ── Write pixel data to canvases ─────────────────────────────────────────
     this._imgR.data.set(outR);
@@ -492,7 +492,7 @@ export class RingProcessor {
       const blobs = filteredBlobs[ci];
       const color = filteredColors[ci];
       this._drawEllipses(ctx);
-      this._drawFilterRay(ctx);
+      if (filterUpMode) this._drawFilterRay(ctx);
       this._drawStats(ctx, blobs, filterUpMode);
       for (const blob of blobs) this._drawBlobBox(ctx, blob, color, true);
     }
@@ -565,7 +565,7 @@ export class RingProcessor {
   }
 
   // Top-left quadrant: full stream + translated crop / label overlays
-  _processOrig(ctx, blobGroups) {
+  _processOrig(ctx, blobGroups, filterUpMode = false) {
     const { cropRegion: [ox, oy] } = this.cfg;
     const vw = this._vc.width, vh = this._vc.height;
     if (!vw || !vh) return;
@@ -574,7 +574,7 @@ export class RingProcessor {
     if (c.width !== vw || c.height !== vh) { c.width = vw; c.height = vh; }
 
     ctx.drawImage(this._vc, 0, 0);
-    this._drawFilterRayFull(ctx);
+    if (filterUpMode) this._drawFilterRayFull(ctx);
 
     for (const [blobs, color] of zipBlobGroups(blobGroups, ['#ff5050', '#50ff50', '#dcdcdc'])) {
       for (const blob of blobs) {
