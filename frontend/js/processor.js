@@ -488,11 +488,16 @@ export class RingProcessor {
       for (const blob of blobs) this._drawBlobBox(ctx, blob, color, true);
     }
 
+    return { blobsR, blobsG, blobsB };
+  }
+
+  // Public — call from outside after prediction is computed
+  renderBlockList(blobsR, blobsG, blobsB, predMap = null) {
     this._renderBlockList([
-      { key: 'Red', color: '#ff5050', blobs: blobsR },
+      { key: 'Red',   color: '#ff5050', blobs: blobsR },
       { key: 'Green', color: '#50ff50', blobs: blobsG },
       { key: 'Black', color: '#dcdcdc', blobs: blobsB },
-    ]);
+    ], predMap);
   }
 
   // Top-left quadrant: full stream + translated crop / label overlays
@@ -635,7 +640,7 @@ export class RingProcessor {
     ctx.restore();
   }
 
-  _renderBlockList(groups) {
+  _renderBlockList(groups, predMap = null) {
     if (!this.blockListEl) return;
     const now = performance.now();
     if (now - this._lastListPaint < 180) return;
@@ -661,14 +666,15 @@ export class RingProcessor {
     }
 
     const frag = document.createDocumentFragment();
-    for (const item of items) frag.appendChild(this._buildBlockCard(item));
+    for (const item of items) frag.appendChild(this._buildBlockCard(item, predMap));
     this.blockListEl.appendChild(frag);
   }
 
-  _buildBlockCard(item) {
+  _buildBlockCard(item, predMap = null) {
     const { color, blob } = item;
     const card = document.createElement('article');
     card.className = 'block-card';
+    card._blob = blob;  // store reference for prediction overlay
 
     const canvas = document.createElement('canvas');
     canvas.className = 'block-crop-canvas';
@@ -683,6 +689,27 @@ export class RingProcessor {
 
     const info = document.createElement('span');
     info.textContent = `${blob.area}`;
+
+    // Prediction badge (confirmed number, inferred orphan number, or orphan marker)
+    const seg = predMap && predMap.get(blob);
+    if (seg) {
+      const badge = document.createElement('span');
+      if (seg.orphan) {
+        if (seg.resolved && seg.number != null) {
+          badge.className = `block-pred-num block-pred-num--${seg.color} block-pred-num--inferred`;
+          badge.textContent = seg.number;
+          badge.title = 'Orphan (inferred)';
+        } else {
+          badge.className = 'block-pred-num block-pred-num--orphan';
+          badge.textContent = seg.resolved ? '~' : '?';
+          badge.title = seg.resolved ? 'Orphan — resolved' : 'Orphan — unresolved';
+        }
+      } else {
+        badge.className = `block-pred-num block-pred-num--${seg.color}`;
+        badge.textContent = seg.number;
+      }
+      meta.appendChild(badge);
+    }
 
     meta.appendChild(dot);
     meta.appendChild(info);

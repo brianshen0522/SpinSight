@@ -219,6 +219,22 @@ header {
   flex-shrink: 0;
 }
 
+.block-pred-num {
+  font-size: 13px;
+  font-weight: 800;
+  font-family: monospace;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #fff;
+  line-height: 1.4;
+  margin-right: 2px;
+}
+.block-pred-num--red    { background: #c0392b; }
+.block-pred-num--black  { background: #333; border: 1px solid rgba(255,255,255,.15); }
+.block-pred-num--green  { background: #1a7a3a; }
+.block-pred-num--orphan   { background: #3a3a50; border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
+.block-pred-num--inferred { opacity: 0.72; border-style: dashed; }
+
 .block-empty {
   display: flex;
   align-items: center;
@@ -340,6 +356,74 @@ header {
 
 .overlay-icon { font-size: 44px; }
 .overlay-text { font-size: 15px; color: var(--muted); text-align: center; }
+
+/* ── Prediction panel ───────────────────────────────────────────────────────── */
+
+.prediction-panel {
+  border-top: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.015);
+  flex-shrink: 0;
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prediction-panel.hidden { display: none; }
+
+.prediction-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prediction-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.7);
+}
+
+.prediction-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.prediction-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.prediction-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pred-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: monospace;
+  letter-spacing: -.01em;
+  color: #fff;
+}
+
+.pred-chip--red    { background: #c0392b; }
+.pred-chip--black  { background: #222; border: 1px solid rgba(255,255,255,.12); }
+.pred-chip--green  { background: #1a7a3a; }
+.pred-chip--orphan          { background: #3a3a50; border: 1px dashed rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
+.pred-chip--orphan-resolved { border-style: solid; color: #fff; }
+.pred-chip--inferred        { opacity: 0.72; border: 1px dashed rgba(255,255,255,.4); }
 
 /* ── Footer ─────────────────────────────────────────────────────────────────── */
 
